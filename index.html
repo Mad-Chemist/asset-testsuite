@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>AUDIO TEST SUITE</title>
+	<style>
+		* {
+			box-sizing: border-box;
+		}
+		html, body {
+			width: 1280px;
+			height: 720px;
+			overflow: hidden;
+			background: #fff;
+			padding: 0px;
+			margin: 0px;
+			font-size: 0px;
+		}
+		body {
+			padding: 20px;
+		}
+
+		video, audio {
+			margin-top: 20px;
+			background: #c7c7c7;
+			border: 3px solid #333;
+			width: 90%;
+		}
+
+		#list, #container {
+			height: 100%;
+			width: 49%;
+			display: inline-block;
+			vertical-align: top;
+		}
+
+		#container { 
+			text-align: center;
+		}
+
+		#list {
+			overflow-x: hidden;
+			overflow-y: scroll;
+			font-size: 14px;
+			word-wrap: break-word;
+		}
+
+		#currentTime {
+			position: absolute;
+			top: 0px;
+			right: 0px;
+			font-size: 14px;
+			left: 0px;
+			text-align: right;
+			background: #000;
+			color: #10ff00;
+			padding: 0.25em 0.5em;
+		}
+	</style>
+	<script>
+		(function(){
+			var WINDOW_WIDTH = 1280;
+			var WINDOW_HEIGHT = 720;
+			var VIDEO_OFFSET_TOP = 175;
+
+			// Define initial API scope that doesn't require angular injection yet needs to be run upon file import. Other methods are added on after instantiating module
+			var API = {
+				setInitialResolution: function() {
+					if (window.navigator.setResolution) {
+						window.navigator.setResolution(WINDOW_WIDTH, WINDOW_HEIGHT);
+					}
+				},
+				overridedErrorHandler: function(param1, param2, param3) {
+					var err = "Error occured " + param1 + param2 + param3;
+					console.log(err);
+					if (window.api && window.api.addComment) {
+						window.api.addComment(err);
+					}
+					return true;
+				},
+				executeImmediately: function() {
+					API.setInitialResolution();
+					// window.onerror = API.overridedErrorHandler;
+
+					if (window.navigator.blind) {
+						window.navigator.blind(true);
+					}
+
+					if (window.navigator.mute) {
+						window.navigator.mute(true);
+					}
+				}
+			};
+
+			// Should be executed as soon as possible & before an instance of videoSourceDTVsvc is instantiated
+			API.executeImmediately();
+		}());
+	</script>
+	<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+	<script>
+		var URL_LIST = [];
+
+		var index = -1;
+		var tag = "audio";
+		var api = {
+			events: ['canplay','canplaythrough','cuechange','durationchange','emptied','ended','error','loadeddata','loadedmetadata','loadstart','pause','play','playing','ratechange','seeked','seeking','stalled','suspend','timeupdate'],
+			lastEvtMsg: "",
+			lastEvtMsgDup: 0,
+			loadHLS: function(callback) {
+				try {
+					api.addComment("Loading HLS stream...");
+					if (Hls.isSupported()) {
+						var video = document.getElementById('media');
+						var hls = new Hls();
+
+						hls.loadSource(URL_LIST[index]);
+						hls.attachMedia(video);
+
+						hls.on(Hls.Events.MANIFEST_PARSED,function() {
+						  callback();
+						});
+					}
+					else {
+						api.addComment("HLS Not Supported for URL" + URL_LIST[index]);
+					}
+				}
+				catch(error) {
+					api.addComment("Error with HLS load " + error && error.toString && error.toString());
+				}
+			},
+			decrement: function() {
+				if (URL_LIST[index - 1]) {
+					index--;
+				}
+				else {
+					index = (URL_LIST.length -1);
+				}
+			},
+			increment: function() {
+				if (URL_LIST[index + 1]) {
+					index++;
+				}
+				else {
+					index = 0;
+				}
+			},
+			changeTag: function() {
+				tag = (tag === "video") ? "audio" : "video";
+
+				api.appendTestFile();
+			},
+			navigationControls: function() {
+				var keycodes = {
+				    37: 'left',
+				    38: 'up',
+				    39: 'right',
+				    40: 'down',
+				    13: 'enter'
+				};
+
+				document.addEventListener("keydown", function(event) {
+					switch (event.keyCode) {
+						case 38:
+							event.preventDefault();
+							event.stopPropagation();
+							api.changeTag();
+						break;
+						case 40:
+							event.preventDefault();
+							event.stopPropagation();
+							api.fetchPlayer().paused ? api.fetchPlayer().play(): api.fetchPlayer().pause();
+						break;
+						case 37:
+							// left
+							event.preventDefault();
+							event.stopPropagation();
+							api.decrement();
+							api.appendTestFile();
+						break;
+						case 39:
+							// right
+							event.preventDefault();
+							event.stopPropagation();
+							api.increment();
+							api.appendTestFile();
+						break;
+					}
+
+					return false;
+				});
+			},
+			addComment: function(comment, br) {
+				br = !(br === false);
+				var list = api.fetchList();
+				comment = ((br) ? "<br />" : "") + comment;
+				list.innerHTML+= comment;
+				list.scrollTop = list.scrollHeight;
+			},
+			appendTestFile: function() {
+				var url = URL_LIST[index];
+				if (!url) return;
+
+				api.cleanup();
+
+				function onceDone() {
+					api.addComment(tag);
+					api.toggleMediaListeners('addEventListener');
+					api.fetchPlayer().play();
+
+					let dtvStatus = api.getVideoStatus();
+					if (dtvStatus) {
+						api.addComment("DTV STATUS: " + dtvStatus);
+					}
+				}
+
+				api.addComment(url);
+				api.fetchContainer().innerHTML = "<"+ tag +" id='media'><source src='" + url + "' type='"+tag+"/mp4'></source></" + tag + ">";
+				if (url.indexOf('m3u8') !== -1) { // HLS
+					api.loadHLS(onceDone);
+				}
+				else {
+					onceDone();
+				}
+			},
+			eventHandler: function(e) {
+				let dtvStatus = api.getVideoStatus();
+				var msg = "EVENT - " + e.type;
+				if (dtvStatus) {
+					msg += " DTV STATUS: " + api.getVideoStatus();
+				}
+
+				if (msg === api.lastEvtMsg) {
+					if (api.lastEvtMsgDup === 0) {
+						api.addComment("");	
+					}
+					api.lastEvtMsgDup++;
+					api.addComment("x" + api.lastEvtMsgDup, false);
+				}
+				else {
+					api.lastEvtMsg = msg;
+					api.lastEvtMsgDup = 0;
+					api.addComment(msg);
+				}
+
+				if (e.type =='timeupdate'){
+					document.getElementById('currentTime').innerText = api.fetchPlayer().currentTime + " / " + api.fetchPlayer().duration;
+				}
+
+				if(e.type=='ended'){
+					api.addComment("Seek on ended event @ " + api.fetchPlayer().currentTime + "/" + api.fetchPlayer().duration);
+					api.fetchPlayer().currentTime = 1;
+				}
+
+				if(e.type == 'seeked'){
+					api.fetchPlayer().pause();
+					api.fetchPlayer().play();
+				}
+			},
+			getVideoStatus: function () {
+				var p = api.fetchPlayer();
+				return p && p.getVideoStatus && p.getVideoStatus();
+			},
+			toggleMediaListeners: function(addRemove) {
+				var player = api.fetchPlayer();
+				
+				for(var i=0;i<api.events.length; i++) {
+					player[addRemove](api.events[i], api.eventHandler);
+				};
+			},
+			fetchPlayer: function() {
+				return document.getElementById("media");
+			},
+			fetchList: function() {
+				return document.getElementById("list");
+			},
+			fetchContainer: function() {
+				return document.getElementById("container");
+			},
+			clearLogCounter: function() {
+				this.lastEvtMsg = "";
+				this.lastEvtMsgDup = 0;
+			},
+			cleanup: function() {
+				try {
+					api.clearLogCounter();
+					var p = api.fetchPlayer();
+					if(!p) return;
+					p.pause();
+					api.toggleMediaListeners('removeEventListener');
+					api.fetchContainer().removeChild(p);
+					api.fetchContainer().innerHTML = "";
+					api.fetchList().innerHTML = "";
+				}catch(e){
+					api.addComment('error in cleanup')
+				}
+			}
+		};
+		api.navigationControls();
+	</script>
+</head>
+<body>
+	<div id="list"></div>
+	<div id="container"></div>
+	<div id="currentTime">0 / 0</div>
+</body>
+</html>
