@@ -79,8 +79,8 @@
 					return true;
 				},
 				executeImmediately: function() {
+					window.onerror = API.overridedErrorHandler;
 					API.setInitialResolution();
-					// window.onerror = API.overridedErrorHandler;
 
 					if (window.navigator.blind) {
 						window.navigator.blind(true);
@@ -96,10 +96,16 @@
 			API.executeImmediately();
 		}());
 	</script>
-	<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+	<script src="http://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 	<script>
 		var URL_LIST = [];
-
+	</script>
+</head>
+<body>
+	<div id="list"></div>
+	<div id="container"></div>
+	<div id="currentTime">0 / 0</div>
+	<script>
 		var index = -1;
 		var tag = "audio";
 		var api = {
@@ -168,21 +174,23 @@
 						case 40:
 							event.preventDefault();
 							event.stopPropagation();
-							api.fetchPlayer().paused ? api.fetchPlayer().play(): api.fetchPlayer().pause();
+							api.fetchPlayer().paused ? api.playFile() : api.fetchPlayer().pause();
 						break;
 						case 37:
 							// left
 							event.preventDefault();
 							event.stopPropagation();
 							api.decrement();
-							api.appendTestFile();
+							// api.appendTestFile();
+							api.urlChange();
 						break;
 						case 39:
 							// right
 							event.preventDefault();
 							event.stopPropagation();
 							api.increment();
-							api.appendTestFile();
+							// api.appendTestFile();
+							api.urlChange();
 						break;
 					}
 
@@ -205,9 +213,9 @@
 				function onceDone() {
 					api.addComment(tag);
 					api.toggleMediaListeners('addEventListener');
-					api.fetchPlayer().play();
+					api.playFile();
 
-					let dtvStatus = api.getVideoStatus();
+					var dtvStatus = api.getVideoStatus();
 					if (dtvStatus) {
 						api.addComment("DTV STATUS: " + dtvStatus);
 					}
@@ -216,14 +224,26 @@
 				api.addComment(url);
 				api.fetchContainer().innerHTML = "<"+ tag +" id='media'><source src='" + url + "' type='"+tag+"/mp4'></source></" + tag + ">";
 				if (url.indexOf('m3u8') !== -1) { // HLS
+					api.fetchPlayer().children[0].type = "application/x-mpegURL";
 					api.loadHLS(onceDone);
 				}
 				else {
 					onceDone();
 				}
 			},
+			playFile: function() {
+				try {
+					var player = api.fetchPlayer();
+					if (player && player.play) {
+						player.play();
+					}
+				}
+				catch(error) {
+					api.addComment("Error playing asset " + error.toString());
+				}
+			},
 			eventHandler: function(e) {
-				let dtvStatus = api.getVideoStatus();
+				var dtvStatus = api.getVideoStatus();
 				var msg = "EVENT - " + e.type;
 				if (dtvStatus) {
 					msg += " DTV STATUS: " + api.getVideoStatus();
@@ -253,7 +273,7 @@
 
 				if(e.type == 'seeked'){
 					api.fetchPlayer().pause();
-					api.fetchPlayer().play();
+					api.playFile();
 				}
 			},
 			getVideoStatus: function () {
@@ -277,8 +297,8 @@
 				return document.getElementById("container");
 			},
 			clearLogCounter: function() {
-				this.lastEvtMsg = "";
-				this.lastEvtMsgDup = 0;
+				api.lastEvtMsg = "";
+				api.lastEvtMsgDup = 0;
 			},
 			cleanup: function() {
 				try {
@@ -293,14 +313,35 @@
 				}catch(e){
 					api.addComment('error in cleanup')
 				}
+			},
+			init: function() {
+				if (window.location.search.indexOf("index=") !== -1) {
+					try {
+						var newIndex = parseInt(window.location.search.split("index=")[1]);
+						api.addComment(newIndex)
+						if (URL_LIST[newIndex]) {
+							index = newIndex;
+						}
+					}
+					catch(error) {
+						api.addComment("Error in url param init " + error.toString());
+					}
+				}
+
+
+				api.navigationControls();
+				if (URL_LIST[index]) {
+					api.appendTestFile();
+				}
+				else {
+					api.addComment("No match for index" + index)
+				}
+			},
+			urlChange: function() {
+				window.location.search = "?index=" + index;
 			}
 		};
-		api.navigationControls();
+		api.init();
 	</script>
-</head>
-<body>
-	<div id="list"></div>
-	<div id="container"></div>
-	<div id="currentTime">0 / 0</div>
 </body>
 </html>
